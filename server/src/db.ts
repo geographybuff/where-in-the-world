@@ -123,6 +123,52 @@ export function createLocation(
   return location;
 }
 
+export function updateLocation(
+  id: number,
+  name: string,
+  latitude: number,
+  longitude: number,
+  date: string,
+  familyMembers: string[],
+  postcardUrl: string | null
+): LocationWithFamily | null {
+  const updateLocationQuery = db.prepare(`
+    UPDATE locations 
+    SET name = ?, latitude = ?, longitude = ?, date = ?, postcard_url = ?
+    WHERE id = ?
+  `);
+
+  const deleteFamilyMembers = db.prepare(`
+    DELETE FROM location_family_members WHERE location_id = ?
+  `);
+
+  const insertFamilyMember = db.prepare(`
+    INSERT INTO location_family_members (location_id, family_member)
+    VALUES (?, ?)
+  `);
+
+  const transaction = db.transaction(() => {
+    const result = updateLocationQuery.run(name, latitude, longitude, date, postcardUrl, id);
+    if (result.changes === 0) {
+      return null;
+    }
+
+    deleteFamilyMembers.run(id);
+    for (const member of familyMembers) {
+      insertFamilyMember.run(id, member);
+    }
+
+    return id;
+  });
+
+  const locationId = transaction();
+  if (locationId === null) {
+    return null;
+  }
+  
+  return getLocationById(locationId as number);
+}
+
 export function deleteLocation(id: number): boolean {
   const deleteFamilyMembers = db.prepare(`
     DELETE FROM location_family_members WHERE location_id = ?

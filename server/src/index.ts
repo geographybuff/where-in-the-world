@@ -7,7 +7,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import NodeGeocoder from 'node-geocoder';
-import { getAllLocations, createLocation, deleteLocation, getLocationById } from './db.js';
+import { getAllLocations, createLocation, updateLocation, deleteLocation, getLocationById } from './db.js';
 import { findCountryCapital, findMatchingCountries } from './capitals.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -369,6 +369,94 @@ app.post('/api/locations', writeLimiter, upload.single('postcard'), (req: Reques
   } catch (error) {
     console.error('Error creating location:', error);
     res.status(500).json({ message: 'Failed to create location' });
+  }
+});
+
+app.put('/api/locations/:id', writeLimiter, upload.single('postcard'), (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ message: 'Invalid location ID' });
+      return;
+    }
+
+    const { name, latitude, longitude, date, familyMembers } = req.body;
+
+    // Validation
+    if (!name || !latitude || !longitude || !date) {
+      res.status(400).json({ message: 'Missing required fields' });
+      return;
+    }
+
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      res.status(400).json({ message: 'Invalid coordinates' });
+      return;
+    }
+
+    let parsedFamilyMembers: string[];
+    try {
+      parsedFamilyMembers = JSON.parse(familyMembers || '[]');
+    } catch {
+      res.status(400).json({ message: 'Invalid family members format' });
+      return;
+    }
+
+    // Validate family members
+    for (const member of parsedFamilyMembers) {
+      if (!ALLOWED_FAMILY_MEMBERS.includes(member)) {
+        res.status(400).json({ message: `Invalid family member: ${member}` });
+        return;
+      }
+    }
+
+    // Get existing location to check for old postcard
+    const existingLocation = getLocationById(id);
+    if (!existingLocation) {
+      res.status(404).json({ message: 'Location not found' });
+      return;
+    }
+
+    // Handle postcard
+    let postcardUrl = existingLocation.postcard_url;
+    if (req.file) {
+      // Delete old postcard if it exists and we're uploading a new one
+      if (existingLocation.postcard_url && fs.existsSync(existingLocation.postcard_url)) {
+        fs.unlinkSync(existingLocation.postcard_url);
+      }
+      postcardUrl = req.file.path;
+    }
+
+    const updatedLocation = updateLocation(
+      id,
+      name,
+      lat,
+      lng,
+      date,
+      parsedFamilyMembers,
+      postcardUrl
+    );
+
+    if (!updatedLocation) {
+      res.status(404).json({ message: 'Location not found' });
+      return;
+    }
+
+    res.json({
+      id: updatedLocation.id,
+      name: updatedLocation.name,
+      latitude: updatedLocation.latitude,
+      longitude: updatedLocation.longitude,
+      date: updatedLocation.date,
+      familyMembers: updatedLocation.familyMembers,
+      postcardUrl: updatedLocation.postcard_url ? `/uploads/${path.basename(updatedLocation.postcard_url)}` : null,
+      createdAt: updatedLocation.created_at,
+    });
+  } catch (error) {
+    console.error('Error updating location:', error);
+    res.status(500).json({ message: 'Failed to update location' });
   }
 });
 

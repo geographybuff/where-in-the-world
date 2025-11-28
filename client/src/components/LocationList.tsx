@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Location, FAMILY_MEMBERS } from '../types';
 import { deleteLocation } from '../api';
 
@@ -7,6 +8,8 @@ interface LocationListProps {
 }
 
 export default function LocationList({ locations, onLocationDeleted }: LocationListProps) {
+  const navigate = useNavigate();
+  
   const getFamilyMemberLabels = (memberValues: string[]) => {
     return memberValues.map(value => {
       const member = FAMILY_MEMBERS.find(m => m.value === value);
@@ -53,13 +56,20 @@ export default function LocationList({ locations, onLocationDeleted }: LocationL
               style={{ maxWidth: '100%', marginTop: '8px', borderRadius: '4px' }}
             />
           )}
-          <button
-            className="btn btn-danger"
-            style={{ marginTop: '8px' }}
-            onClick={() => handleDelete(location.id)}
-          >
-            Delete
-          </button>
+          <div className="button-group" style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigate(`/edit/${location.id}`)}
+            >
+              Edit
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => handleDelete(location.id)}
+            >
+              Delete
+            </button>
+          </div>
         </div>
       ))}
     </div>

@@ -107,16 +107,12 @@ export default function MapPage() {
         </aside>
 
         <main className="map-container">
-          {activeTab === 'map' && (
-            <>
-              {loading ? (
-                <div className="loading">Loading map...</div>
-              ) : error ? (
-                <div className="error-message">{error}</div>
-              ) : (
-                <MapView locations={filteredLocations} />
-              )}
-            </>
+          {loading ? (
+            <div className="loading">Loading map...</div>
+          ) : error ? (
+            <div className="error-message">{error}</div>
+          ) : (
+            <MapView locations={filteredLocations} />
           )}
         </main>
       </div>
