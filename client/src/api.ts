@@ -2,6 +2,25 @@ import { Location, LocationInput } from './types';
 
 const API_BASE = '/api';
 
+export interface GeocodeResult {
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  city?: string;
+  state?: string;
+  country?: string;
+  countryCode?: string;
+}
+
+export async function geocodeAddress(address: string): Promise<GeocodeResult[]> {
+  const response = await fetch(`${API_BASE}/geocode?address=${encodeURIComponent(address)}`);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to geocode address');
+  }
+  return response.json();
+}
+
 export async function getLocations(): Promise<Location[]> {
   const response = await fetch(`${API_BASE}/locations`);
   if (!response.ok) {

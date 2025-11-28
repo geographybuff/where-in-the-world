@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import DatePicker from 'react-datepicker';
 import Select from 'react-select';
-import { createLocation } from '../api';
+import { createLocation, geocodeAddress, GeocodeResult } from '../api';
 import { LocationInput } from '../types';
 
 interface BulkLocationEntry {
   id: string;
   name: string;
-  latitude: string;
-  longitude: string;
+  address: string;
+  selectedLocation: GeocodeResult | null;
+  searchingAddress: boolean;
+  geocodeResults: GeocodeResult[];
   date: Date | null;
   familyMembers: string[];
   postcard: File | null;
@@ -19,13 +21,13 @@ interface BulkLocationFormProps {
 }
 
 const familyMemberOptions = [
-  { value: 'Alan', label: 'Alan' },
-  { value: 'Deborah', label: 'Deborah' },
-  { value: 'John', label: 'John' },
-  { value: 'Cyn', label: 'Cyn' },
-  { value: 'Louise', label: 'Louise' },
-  { value: 'Ben', label: 'Ben' },
-  { value: 'Michelle', label: 'Michelle' },
+  { value: 'alan', label: 'Alan' },
+  { value: 'deborah', label: 'Deborah' },
+  { value: 'john', label: 'John' },
+  { value: 'cyn', label: 'Cyn' },
+  { value: 'louise', label: 'Louise' },
+  { value: 'ben', label: 'Ben' },
+  { value: 'michelle', label: 'Michelle' },
 ];
 
 export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormProps) {
@@ -33,8 +35,10 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
     {
       id: '1',
       name: '',
-      latitude: '',
-      longitude: '',
+      address: '',
+      selectedLocation: null,
+      searchingAddress: false,
+      geocodeResults: [],
       date: new Date(),
       familyMembers: [],
       postcard: null,
@@ -47,8 +51,10 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
     const newLocation: BulkLocationEntry = {
       id: Date.now().toString(),
       name: '',
-      latitude: '',
-      longitude: '',
+      address: '',
+      selectedLocation: null,
+      searchingAddress: false,
+      geocodeResults: [],
       date: new Date(),
       familyMembers: [],
       postcard: null,
@@ -68,18 +74,53 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
     ));
   };
 
+  const handleAddressSearch = async (id: string) => {
+    const location = locations.find(loc => loc.id === id);
+    if (!location || !location.address.trim()) {
+      return;
+    }
+
+    updateLocation(id, 'searchingAddress', true);
+    updateLocation(id, 'geocodeResults', []);
+    updateLocation(id, 'selectedLocation', null);
+
+    try {
+      const results = await geocodeAddress(location.address.trim());
+      updateLocation(id, 'geocodeResults', results);
+      
+      if (results.length === 1) {
+        // Auto-select if only one result
+        updateLocation(id, 'selectedLocation', results[0]);
+        if (!location.name.trim()) {
+          updateLocation(id, 'name', results[0].formattedAddress);
+        }
+      }
+    } catch (err) {
+      console.error('Geocoding error:', err);
+      // You could show individual error messages per location here
+    } finally {
+      updateLocation(id, 'searchingAddress', false);
+    }
+  };
+
+  const handleLocationSelect = (id: string, result: GeocodeResult) => {
+    const location = locations.find(loc => loc.id === id);
+    updateLocation(id, 'selectedLocation', result);
+    updateLocation(id, 'geocodeResults', []);
+    
+    if (location && !location.name.trim()) {
+      updateLocation(id, 'name', result.formattedAddress);
+    }
+  };
+
   const validateLocations = () => {
     for (const location of locations) {
       if (!location.name.trim()) {
         setError('All location names are required');
         return false;
       }
-      if (!location.latitude || !location.longitude) {
-        setError('All coordinates are required');
-        return false;
-      }
-      if (isNaN(Number(location.latitude)) || isNaN(Number(location.longitude))) {
-        setError('Coordinates must be valid numbers');
+      if (!location.selectedLocation) {
+        setError('Please search for and select an address for all locations');
         return false;
       }
       if (!location.date) {
@@ -105,12 +146,12 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
     setSubmitting(true);
 
     try {
-      // Submit each location using the correct API format
+      // Submit each location
       for (const location of locations) {
         const locationInput: LocationInput = {
           name: location.name,
-          latitude: parseFloat(location.latitude),
-          longitude: parseFloat(location.longitude),
+          latitude: location.selectedLocation!.latitude,
+          longitude: location.selectedLocation!.longitude,
           date: location.date!.toISOString().split('T')[0],
           familyMembers: location.familyMembers,
           postcard: location.postcard || undefined,
@@ -123,8 +164,10 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
       setLocations([{
         id: '1',
         name: '',
-        latitude: '',
-        longitude: '',
+        address: '',
+        selectedLocation: null,
+        searchingAddress: false,
+        geocodeResults: [],
         date: new Date(),
         familyMembers: [],
         postcard: null,
@@ -179,35 +222,62 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                   type="text"
                   value={location.name}
                   onChange={(e) => updateLocation(location.id, 'name', e.target.value)}
-                  placeholder="Enter location name"
+                  placeholder="Enter location name (will auto-fill from address)"
                   required
                 />
               </div>
 
               <div className="form-group">
-                <label htmlFor={`latitude-${location.id}`}>Latitude</label>
-                <input
-                  id={`latitude-${location.id}`}
-                  type="number"
-                  step="any"
-                  value={location.latitude}
-                  onChange={(e) => updateLocation(location.id, 'latitude', e.target.value)}
-                  placeholder="e.g., 40.7128"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor={`longitude-${location.id}`}>Longitude</label>
-                <input
-                  id={`longitude-${location.id}`}
-                  type="number"
-                  step="any"
-                  value={location.longitude}
-                  onChange={(e) => updateLocation(location.id, 'longitude', e.target.value)}
-                  placeholder="e.g., -74.0060"
-                  required
-                />
+                <label htmlFor={`address-${location.id}`}>Address Search</label>
+                <div className="address-search">
+                  <div className="search-input-container">
+                    <input
+                      id={`address-${location.id}`}
+                      type="text"
+                      value={location.address}
+                      onChange={(e) => updateLocation(location.id, 'address', e.target.value)}
+                      placeholder="e.g., Warsaw, Poland"
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddressSearch(location.id))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAddressSearch(location.id)}
+                      disabled={location.searchingAddress}
+                      className="search-button"
+                    >
+                      {location.searchingAddress ? 'Searching...' : 'Search'}
+                    </button>
+                  </div>
+                  
+                  {location.selectedLocation && (
+                    <div className="selected-location">
+                      <strong>Selected:</strong> {location.selectedLocation.formattedAddress}
+                      <button
+                        type="button"
+                        onClick={() => updateLocation(location.id, 'selectedLocation', null)}
+                        className="clear-selection"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                  
+                  {location.geocodeResults.length > 0 && (
+                    <div className="geocode-results">
+                      <p><strong>Select a location:</strong></p>
+                      {location.geocodeResults.map((result, resultIndex) => (
+                        <button
+                          key={resultIndex}
+                          type="button"
+                          onClick={() => handleLocationSelect(location.id, result)}
+                          className="result-item"
+                        >
+                          {result.formattedAddress}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="form-group">

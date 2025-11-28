@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import NodeGeocoder from 'node-geocoder';
 import { getAllLocations, createLocation, deleteLocation, getLocationById } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,6 +16,13 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+// Initialize geocoder
+const geocoder = NodeGeocoder({
+  provider: 'openstreetmap',
+  httpAdapter: 'https',
+  formatter: null,
+});
 
 // Rate limiting
 const limiter = rateLimit({
@@ -72,6 +80,41 @@ app.use('/api', limiter);
 
 // Allowed family members
 const ALLOWED_FAMILY_MEMBERS = ['alan', 'deborah', 'john', 'cyn', 'louise', 'ben', 'michelle'];
+
+// Add geocoding endpoint
+app.get('/api/geocode', async (req: Request, res: Response) => {
+  try {
+    const { address } = req.query;
+    
+    if (!address || typeof address !== 'string') {
+      res.status(400).json({ message: 'Address parameter is required' });
+      return;
+    }
+
+    const results = await geocoder.geocode(address);
+    
+    if (results.length === 0) {
+      res.status(404).json({ message: 'No results found for this address' });
+      return;
+    }
+
+    // Return up to 5 results with formatted data
+    const formattedResults = results.slice(0, 5).map(result => ({
+      formattedAddress: result.formattedAddress,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      city: result.city,
+      state: result.state,
+      country: result.country,
+      countryCode: result.countryCode,
+    }));
+
+    res.json(formattedResults);
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    res.status(500).json({ message: 'Failed to geocode address' });
+  }
+});
 
 // Routes
 app.get('/api/locations', (_req: Request, res: Response) => {
