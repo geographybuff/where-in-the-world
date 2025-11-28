@@ -24,7 +24,8 @@ const geocoder = NodeGeocoder({
   httpAdapter: 'https',
   formatter: null,
   // Required by OSM Nominatim usage policy
-  fetch: (url: RequestInfo) => fetch(url, {
+  // @ts-expect-error - node-geocoder types don't fully match node-fetch types
+  fetch: (url: string) => fetch(url, {
     headers: {
       'User-Agent': 'WhereInTheWorld-FamilyTravelMap/1.0 (family travel tracking app)',
     }
@@ -141,7 +142,7 @@ app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
             isCountryCapital: true,
           });
         }
-      } catch (err) {
+      } catch {
         // Continue with regular search if capital lookup fails
       }
     }
@@ -198,7 +199,7 @@ app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
           results.push(geocodeResult);
         }
       }
-    } catch (err) {
+    } catch {
       // Continue with capital-only results if geocoding fails
     }
 
@@ -507,5 +508,5 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.warn(`Server running on http://localhost:${PORT}`);
 });

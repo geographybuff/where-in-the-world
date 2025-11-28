@@ -79,8 +79,9 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
+    const timers = debounceTimersRef.current;
     return () => {
-      Object.values(debounceTimersRef.current).forEach(timer => clearTimeout(timer));
+      Object.values(timers).forEach(timer => clearTimeout(timer));
     };
   }, []);
 
