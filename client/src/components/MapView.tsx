@@ -29,7 +29,7 @@ export default function MapView({ locations }: MapViewProps) {
   return (
     <MapContainer
       center={[20, 0]}
-      zoom={1}
+      zoom={2}
       minZoom={1}
       style={{ height: '100%', width: '100%' }}
     >

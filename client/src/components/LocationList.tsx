@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Location, FAMILY_MEMBERS } from '../types';
 import { deleteLocation } from '../api';
@@ -9,6 +10,7 @@ interface LocationListProps {
 
 export default function LocationList({ locations, onLocationDeleted }: LocationListProps) {
   const navigate = useNavigate();
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   
   const getFamilyMemberLabels = (memberValues: string[]) => {
     return memberValues.map(value => {
@@ -22,10 +24,15 @@ export default function LocationList({ locations, onLocationDeleted }: LocationL
       try {
         await deleteLocation(id);
         onLocationDeleted();
+        setOpenMenuId(null);
       } catch {
         alert('Failed to delete location');
       }
     }
+  };
+
+  const toggleMenu = (id: number) => {
+    setOpenMenuId(openMenuId === id ? null : id);
   };
 
   if (locations.length === 0) {
@@ -41,9 +48,34 @@ export default function LocationList({ locations, onLocationDeleted }: LocationL
       <h3>Locations ({locations.length})</h3>
       {locations.map((location) => (
         <div key={location.id} className="location-item">
-          <h4>{location.name}</h4>
-          <p><strong>Date:</strong> {new Date(location.date).toLocaleDateString()}</p>
-          <p><strong>Coordinates:</strong> {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}</p>
+          <div className="location-item-header">
+            <div>
+              <h4>{location.name}</h4>
+              <p><strong>Date:</strong> {new Date(location.date).toLocaleDateString()}</p>
+            </div>
+            <div className="location-menu">
+              <button 
+                className="gear-button"
+                onClick={() => toggleMenu(location.id)}
+                aria-label="Options"
+              >
+                ⚙️
+              </button>
+              {openMenuId === location.id && (
+                <div className="dropdown-menu">
+                  <button onClick={() => {
+                    navigate(`/edit/${location.id}`);
+                    setOpenMenuId(null);
+                  }}>
+                    ✏️ Edit
+                  </button>
+                  <button onClick={() => handleDelete(location.id)}>
+                    🗑️ Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="family-tags">
             {getFamilyMemberLabels(location.familyMembers).map((label, i) => (
               <span key={i} className="family-tag">{label}</span>
@@ -56,20 +88,6 @@ export default function LocationList({ locations, onLocationDeleted }: LocationL
               style={{ maxWidth: '100%', marginTop: '8px', borderRadius: '4px' }}
             />
           )}
-          <div className="button-group" style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => navigate(`/edit/${location.id}`)}
-            >
-              Edit
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={() => handleDelete(location.id)}
-            >
-              Delete
-            </button>
-          </div>
         </div>
       ))}
     </div>
