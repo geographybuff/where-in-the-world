@@ -12,11 +12,35 @@ export interface GeocodeResult {
   countryCode?: string;
 }
 
+export interface TypeaheadResult {
+  formattedAddress: string;
+  displayName: string;
+  latitude: number;
+  longitude: number;
+  city?: string;
+  state?: string;
+  country?: string;
+  countryCode?: string;
+  isCountryCapital?: boolean;
+}
+
 export async function geocodeAddress(address: string): Promise<GeocodeResult[]> {
   const response = await fetch(`${API_BASE}/geocode?address=${encodeURIComponent(address)}`);
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.message || 'Failed to geocode address');
+  }
+  return response.json();
+}
+
+export async function searchLocationsTypeahead(query: string): Promise<TypeaheadResult[]> {
+  if (!query.trim() || query.trim().length < 2) {
+    return [];
+  }
+  
+  const response = await fetch(`${API_BASE}/geocode/typeahead?query=${encodeURIComponent(query)}`);
+  if (!response.ok) {
+    return [];
   }
   return response.json();
 }

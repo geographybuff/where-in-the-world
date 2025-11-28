@@ -1,16 +1,17 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import DatePicker from 'react-datepicker';
 import Select from 'react-select';
-import { createLocation, geocodeAddress, GeocodeResult } from '../api';
+import { createLocation, searchLocationsTypeahead, TypeaheadResult } from '../api';
 import { LocationInput } from '../types';
 
 interface BulkLocationEntry {
   id: string;
   name: string;
   address: string;
-  selectedLocation: GeocodeResult | null;
+  selectedLocation: TypeaheadResult | null;
   searchingAddress: boolean;
-  geocodeResults: GeocodeResult[];
+  typeaheadResults: TypeaheadResult[];
+  showDropdown: boolean;
   date: Date | null;
   familyMembers: string[];
   postcard: File | null;
@@ -38,7 +39,8 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
       address: '',
       selectedLocation: null,
       searchingAddress: false,
-      geocodeResults: [],
+      typeaheadResults: [],
+      showDropdown: false,
       date: new Date(),
       familyMembers: [],
       postcard: null,
@@ -46,6 +48,14 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const debounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimersRef.current).forEach(timer => clearTimeout(timer));
+    };
+  }, []);
 
   const addNewLocation = () => {
     const newLocation: BulkLocationEntry = {
@@ -54,7 +64,8 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
       address: '',
       selectedLocation: null,
       searchingAddress: false,
-      geocodeResults: [],
+      typeaheadResults: [],
+      showDropdown: false,
       date: new Date(),
       familyMembers: [],
       postcard: null,
@@ -65,52 +76,71 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
   const removeLocation = (id: string) => {
     if (locations.length > 1) {
       setLocations(locations.filter(loc => loc.id !== id));
+      // Clear debounce timer for this location
+      if (debounceTimersRef.current[id]) {
+        clearTimeout(debounceTimersRef.current[id]);
+        delete debounceTimersRef.current[id];
+      }
     }
   };
 
-  const updateLocation = (id: string, field: keyof BulkLocationEntry, value: any) => {
-    setLocations(locations.map(loc => 
-      loc.id === id ? { ...loc, [field]: value } : loc
+  const updateLocation = useCallback((id: string, updates: Partial<BulkLocationEntry>) => {
+    setLocations(prev => prev.map(loc => 
+      loc.id === id ? { ...loc, ...updates } : loc
     ));
-  };
+  }, []);
 
-  const handleAddressSearch = async (id: string) => {
-    const location = locations.find(loc => loc.id === id);
-    if (!location || !location.address.trim()) {
+  const performSearch = useCallback(async (id: string, query: string) => {
+    if (query.trim().length < 2) {
+      updateLocation(id, { typeaheadResults: [], showDropdown: false });
       return;
     }
 
-    updateLocation(id, 'searchingAddress', true);
-    updateLocation(id, 'geocodeResults', []);
-    updateLocation(id, 'selectedLocation', null);
-
+    updateLocation(id, { searchingAddress: true });
     try {
-      const results = await geocodeAddress(location.address.trim());
-      updateLocation(id, 'geocodeResults', results);
-      
-      if (results.length === 1) {
-        // Auto-select if only one result
-        updateLocation(id, 'selectedLocation', results[0]);
-        if (!location.name.trim()) {
-          updateLocation(id, 'name', results[0].formattedAddress);
-        }
-      }
-    } catch (err) {
-      console.error('Geocoding error:', err);
-      // You could show individual error messages per location here
-    } finally {
-      updateLocation(id, 'searchingAddress', false);
+      const results = await searchLocationsTypeahead(query);
+      updateLocation(id, { 
+        typeaheadResults: results, 
+        showDropdown: results.length > 0,
+        searchingAddress: false 
+      });
+    } catch {
+      updateLocation(id, { 
+        typeaheadResults: [], 
+        showDropdown: false,
+        searchingAddress: false 
+      });
     }
+  }, [updateLocation]);
+
+  const handleAddressChange = (id: string, value: string) => {
+    updateLocation(id, { address: value });
+    
+    // Clear existing debounce timer for this location
+    if (debounceTimersRef.current[id]) {
+      clearTimeout(debounceTimersRef.current[id]);
+    }
+    
+    // Set new debounce timer
+    debounceTimersRef.current[id] = setTimeout(() => {
+      performSearch(id, value);
+    }, 300);
   };
 
-  const handleLocationSelect = (id: string, result: GeocodeResult) => {
+  const handleLocationSelect = (id: string, result: TypeaheadResult) => {
     const location = locations.find(loc => loc.id === id);
-    updateLocation(id, 'selectedLocation', result);
-    updateLocation(id, 'geocodeResults', []);
+    const updates: Partial<BulkLocationEntry> = {
+      selectedLocation: result,
+      address: result.displayName,
+      typeaheadResults: [],
+      showDropdown: false,
+    };
     
     if (location && !location.name.trim()) {
-      updateLocation(id, 'name', result.formattedAddress);
+      updates.name = result.formattedAddress;
     }
+    
+    updateLocation(id, updates);
   };
 
   const validateLocations = () => {
@@ -120,7 +150,7 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
         return false;
       }
       if (!location.selectedLocation) {
-        setError('Please search for and select an address for all locations');
+        setError('Please search for and select a location for all entries');
         return false;
       }
       if (!location.date) {
@@ -167,7 +197,8 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
         address: '',
         selectedLocation: null,
         searchingAddress: false,
-        geocodeResults: [],
+        typeaheadResults: [],
+        showDropdown: false,
         date: new Date(),
         familyMembers: [],
         postcard: null,
@@ -221,62 +252,78 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                   id={`name-${location.id}`}
                   type="text"
                   value={location.name}
-                  onChange={(e) => updateLocation(location.id, 'name', e.target.value)}
-                  placeholder="Enter location name (will auto-fill from address)"
+                  onChange={(e) => updateLocation(location.id, { name: e.target.value })}
+                  placeholder="Enter location name (will auto-fill from search)"
                   required
                 />
               </div>
 
               <div className="form-group">
-                <label htmlFor={`address-${location.id}`}>Address Search</label>
-                <div className="address-search">
-                  <div className="search-input-container">
+                <label htmlFor={`address-${location.id}`}>Search Location</label>
+                <div className="address-search typeahead-container">
+                  <div className="typeahead-input-wrapper">
                     <input
                       id={`address-${location.id}`}
                       type="text"
                       value={location.address}
-                      onChange={(e) => updateLocation(location.id, 'address', e.target.value)}
-                      placeholder="e.g., Warsaw, Poland"
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddressSearch(location.id))}
+                      onChange={(e) => handleAddressChange(location.id, e.target.value)}
+                      onFocus={() => {
+                        if (location.typeaheadResults.length > 0) {
+                          updateLocation(location.id, { showDropdown: true });
+                        }
+                      }}
+                      onBlur={() => {
+                        // Delay hiding to allow click on dropdown items
+                        setTimeout(() => {
+                          updateLocation(location.id, { showDropdown: false });
+                        }, 200);
+                      }}
+                      placeholder="Type a city or country name..."
+                      className="typeahead-input"
+                      autoComplete="off"
                     />
-                    <button
-                      type="button"
-                      onClick={() => handleAddressSearch(location.id)}
-                      disabled={location.searchingAddress}
-                      className="search-button"
-                    >
-                      {location.searchingAddress ? 'Searching...' : 'Search'}
-                    </button>
+                    {location.searchingAddress && (
+                      <span className="typeahead-spinner" aria-label="Searching">⏳</span>
+                    )}
                   </div>
+                  
+                  {location.showDropdown && location.typeaheadResults.length > 0 && (
+                    <div className="typeahead-dropdown">
+                      {location.typeaheadResults.map((result, resultIndex) => (
+                        <button
+                          key={resultIndex}
+                          type="button"
+                          onClick={() => handleLocationSelect(location.id, result)}
+                          className={`typeahead-item ${result.isCountryCapital ? 'capital-result' : ''}`}
+                        >
+                          <span className="typeahead-item-name">{result.displayName}</span>
+                          {result.isCountryCapital && (
+                            <span className="typeahead-item-badge">🏛️ Capital</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   
                   {location.selectedLocation && (
                     <div className="selected-location">
                       <strong>Selected:</strong> {location.selectedLocation.formattedAddress}
+                      {location.selectedLocation.isCountryCapital && (
+                        <span className="capital-badge">🏛️ Capital</span>
+                      )}
                       <button
                         type="button"
-                        onClick={() => updateLocation(location.id, 'selectedLocation', null)}
+                        onClick={() => updateLocation(location.id, { 
+                          selectedLocation: null, 
+                          address: '' 
+                        })}
                         className="clear-selection"
                       >
                         ✕
                       </button>
                     </div>
                   )}
-                  
-                  {location.geocodeResults.length > 0 && (
-                    <div className="geocode-results">
-                      <p><strong>Select a location:</strong></p>
-                      {location.geocodeResults.map((result, resultIndex) => (
-                        <button
-                          key={resultIndex}
-                          type="button"
-                          onClick={() => handleLocationSelect(location.id, result)}
-                          className="result-item"
-                        >
-                          {result.formattedAddress}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <p className="form-hint">Search for cities or countries. For countries, the capital will be used.</p>
                 </div>
               </div>
 
@@ -285,7 +332,7 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                 <DatePicker
                   id={`date-${location.id}`}
                   selected={location.date}
-                  onChange={(date) => updateLocation(location.id, 'date', date)}
+                  onChange={(date) => updateLocation(location.id, { date })}
                   dateFormat="yyyy-MM-dd"
                   maxDate={new Date()}
                   required
@@ -303,7 +350,7 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                   )}
                   onChange={(selectedOptions) => {
                     const values = selectedOptions ? selectedOptions.map(option => option.value) : [];
-                    updateLocation(location.id, 'familyMembers', values);
+                    updateLocation(location.id, { familyMembers: values });
                   }}
                   placeholder="Select family members"
                 />
@@ -317,7 +364,7 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                   accept="image/*"
                   onChange={(e) => {
                     const file = e.target.files?.[0] || null;
-                    updateLocation(location.id, 'postcard', file);
+                    updateLocation(location.id, { postcard: file });
                   }}
                 />
               </div>

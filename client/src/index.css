@@ -741,6 +741,116 @@ body {
   margin-bottom: 0;
 }
 
+/* Typeahead Search Styles */
+.typeahead-container {
+  position: relative;
+}
+
+.typeahead-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.typeahead-input {
+  width: 100%;
+  padding: 0.75rem;
+  padding-right: 2.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.typeahead-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.typeahead-spinner {
+  position: absolute;
+  right: 0.75rem;
+  font-size: 1rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.typeahead-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.typeahead-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: white;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.9rem;
+}
+
+.typeahead-item:hover {
+  background: #f0f5ff;
+}
+
+.typeahead-item:last-child {
+  border-bottom: none;
+}
+
+.typeahead-item.capital-result {
+  background: #fef3c7;
+}
+
+.typeahead-item.capital-result:hover {
+  background: #fde68a;
+}
+
+.typeahead-item-name {
+  flex: 1;
+  margin-right: 0.5rem;
+}
+
+.typeahead-item-badge {
+  font-size: 0.75rem;
+  background: #667eea;
+  color: white;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.capital-badge {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.form-hint {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #666;
+  font-style: italic;
+}
+
 /* Filter section */
 .filter-section {
   background: #f0f0f0;

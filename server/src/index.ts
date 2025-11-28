@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import NodeGeocoder from 'node-geocoder';
 import { getAllLocations, createLocation, deleteLocation, getLocationById } from './db.js';
+import { findCountryCapital, findMatchingCountries } from './capitals.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -111,6 +112,127 @@ app.get('/api/geocode', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Geocoding error:', error);
     res.status(500).json({ message: 'Failed to geocode address' });
+  }
+});
+
+// Type-ahead geocoding endpoint - supports city and country searches
+// If a country is entered, returns the capital as the location
+app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || typeof query !== 'string') {
+      res.status(400).json({ message: 'Query parameter is required' });
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    
+    if (trimmedQuery.length < 2) {
+      res.json([]); // Don't search for very short queries
+      return;
+    }
+
+    interface TypeaheadResult {
+      formattedAddress: string;
+      displayName: string;
+      latitude: number;
+      longitude: number;
+      city?: string;
+      state?: string;
+      country?: string;
+      countryCode?: string;
+      isCountryCapital?: boolean;
+    }
+
+    const results: TypeaheadResult[] = [];
+
+    // First, check if the query matches a country name
+    // If so, add the capital as a suggestion
+    const capitalMatch = findCountryCapital(trimmedQuery);
+    if (capitalMatch) {
+      // Search for the capital city
+      try {
+        const capitalResults = await geocoder.geocode(`${capitalMatch.capital}, ${capitalMatch.country}`);
+        if (capitalResults.length > 0) {
+          const capitalResult = capitalResults[0];
+          results.push({
+            formattedAddress: `${capitalMatch.capital}, ${capitalMatch.country}`,
+            displayName: `${capitalMatch.country} (Capital: ${capitalMatch.capital})`,
+            latitude: capitalResult.latitude ?? 0,
+            longitude: capitalResult.longitude ?? 0,
+            city: capitalMatch.capital,
+            country: capitalMatch.country,
+            countryCode: capitalResult.countryCode,
+            isCountryCapital: true,
+          });
+        }
+      } catch {
+        // Continue with regular search if capital lookup fails
+      }
+    }
+
+    // Also check for partial country matches
+    const matchingCountries = findMatchingCountries(trimmedQuery);
+    for (const countryMatch of matchingCountries.slice(0, 3)) {
+      // Skip if we already added this country's capital above
+      if (capitalMatch && capitalMatch.country === countryMatch.country) {
+        continue;
+      }
+      try {
+        const capitalResults = await geocoder.geocode(`${countryMatch.capital}, ${countryMatch.country}`);
+        if (capitalResults.length > 0) {
+          const capitalResult = capitalResults[0];
+          results.push({
+            formattedAddress: `${countryMatch.capital}, ${countryMatch.country}`,
+            displayName: `${countryMatch.country} (Capital: ${countryMatch.capital})`,
+            latitude: capitalResult.latitude ?? 0,
+            longitude: capitalResult.longitude ?? 0,
+            city: countryMatch.capital,
+            country: countryMatch.country,
+            countryCode: capitalResult.countryCode,
+            isCountryCapital: true,
+          });
+        }
+      } catch {
+        // Skip if geocoding fails
+      }
+    }
+
+    // Now perform a regular geocode search for city/address matches
+    try {
+      const geocodeResults = await geocoder.geocode(trimmedQuery);
+      const formattedResults = geocodeResults.slice(0, 5).map(result => ({
+        formattedAddress: result.formattedAddress ?? '',
+        displayName: result.formattedAddress ?? '',
+        latitude: result.latitude ?? 0,
+        longitude: result.longitude ?? 0,
+        city: result.city,
+        state: result.state,
+        country: result.country,
+        countryCode: result.countryCode,
+        isCountryCapital: false,
+      }));
+      
+      // Filter out duplicates and add to results
+      for (const geocodeResult of formattedResults) {
+        const isDuplicate = results.some(
+          r => Math.abs(r.latitude - geocodeResult.latitude) < 0.01 && 
+               Math.abs(r.longitude - geocodeResult.longitude) < 0.01
+        );
+        if (!isDuplicate) {
+          results.push(geocodeResult);
+        }
+      }
+    } catch {
+      // Continue with capital-only results if geocoding fails
+    }
+
+    // Return up to 8 results
+    res.json(results.slice(0, 8));
+  } catch (error) {
+    console.error('Type-ahead geocoding error:', error);
+    res.status(500).json({ message: 'Failed to search locations' });
   }
 });
 
