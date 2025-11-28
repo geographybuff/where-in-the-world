@@ -21,13 +21,37 @@ Track the Cort family's adventures around the globe! This application allows you
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.19+ or 22.12+ (required for Vite)
 - npm
+
+**Important**: If you're getting a "crypto.hash is not a function" error, you need to upgrade Node.js. Your current version (20.9.0) is not compatible with the latest Vite.
+
+#### Upgrading Node.js
+
+**Option 1: Using Node Version Manager (Recommended)**
+```bash
+# Install nvm if you don't have it
+# Windows: Download from https://github.com/coreybutler/nvm-windows
+
+# Install and use the latest LTS version
+nvm install 20.19.0
+nvm use 20.19.0
+```
+
+**Option 2: Direct Download**
+- Download the latest Node.js LTS from [nodejs.org](https://nodejs.org/)
+- Install and restart your terminal
+
+**Verify your Node.js version:**
+```bash
+node --version
+```
 
 ### Installation
 
 1. Clone the repository
-2. Install all dependencies:
+2. **Ensure you have Node.js 20.19+ or 22.12+**
+3. Install all dependencies:
 
 ```bash
 npm run install:all
