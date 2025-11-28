@@ -7,7 +7,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import NodeGeocoder from 'node-geocoder';
-import { getAllLocations, createLocation, deleteLocation, getLocationById } from './db.js';
+import { getAllLocations, createLocation, updateLocation, deleteLocation, getLocationById } from './db.js';
+import { findCountryCapital, findMatchingCountries } from './capitals.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,12 @@ const geocoder = NodeGeocoder({
   provider: 'openstreetmap',
   httpAdapter: 'https',
   formatter: null,
+  // Required by OSM Nominatim usage policy
+  fetch: (url: RequestInfo) => fetch(url, {
+    headers: {
+      'User-Agent': 'WhereInTheWorld-FamilyTravelMap/1.0 (family travel tracking app)',
+    }
+  })
 });
 
 // Rate limiting
@@ -81,7 +88,129 @@ app.use('/api', limiter);
 // Allowed family members
 const ALLOWED_FAMILY_MEMBERS = ['alan', 'deborah', 'john', 'cyn', 'louise', 'ben', 'michelle'];
 
-// Add geocoding endpoint
+// Type-ahead geocoding endpoint - supports city and country searches
+// If a country is entered, returns the capital as the location
+// IMPORTANT: This must come BEFORE /api/geocode since Express matches routes in order
+app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || typeof query !== 'string') {
+      res.status(400).json({ message: 'Query parameter is required' });
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    
+    if (trimmedQuery.length < 2) {
+      res.json([]); // Don't search for very short queries
+      return;
+    }
+
+    interface TypeaheadResult {
+      formattedAddress: string;
+      displayName: string;
+      latitude: number;
+      longitude: number;
+      city?: string;
+      state?: string;
+      country?: string;
+      countryCode?: string;
+      isCountryCapital?: boolean;
+    }
+
+    const results: TypeaheadResult[] = [];
+
+    // First, check if the query matches a country name
+    // If so, add the capital as a suggestion
+    const capitalMatch = findCountryCapital(trimmedQuery);
+    if (capitalMatch) {
+      // Search for the capital city
+      try {
+        const capitalResults = await geocoder.geocode(`${capitalMatch.capital}, ${capitalMatch.country}`);
+        if (capitalResults.length > 0) {
+          const capitalResult = capitalResults[0];
+          results.push({
+            formattedAddress: `${capitalMatch.capital}, ${capitalMatch.country}`,
+            displayName: `${capitalMatch.country} (Capital: ${capitalMatch.capital})`,
+            latitude: capitalResult.latitude ?? 0,
+            longitude: capitalResult.longitude ?? 0,
+            city: capitalMatch.capital,
+            country: capitalMatch.country,
+            countryCode: capitalResult.countryCode,
+            isCountryCapital: true,
+          });
+        }
+      } catch (err) {
+        // Continue with regular search if capital lookup fails
+      }
+    }
+
+    // Also check for partial country matches
+    const matchingCountries = findMatchingCountries(trimmedQuery);
+    for (const countryMatch of matchingCountries.slice(0, 3)) {
+      // Skip if we already added this country's capital above
+      if (capitalMatch && capitalMatch.country === countryMatch.country) {
+        continue;
+      }
+      try {
+        const capitalResults = await geocoder.geocode(`${countryMatch.capital}, ${countryMatch.country}`);
+        if (capitalResults.length > 0) {
+          const capitalResult = capitalResults[0];
+          results.push({
+            formattedAddress: `${countryMatch.capital}, ${countryMatch.country}`,
+            displayName: `${countryMatch.country} (Capital: ${countryMatch.capital})`,
+            latitude: capitalResult.latitude ?? 0,
+            longitude: capitalResult.longitude ?? 0,
+            city: countryMatch.capital,
+            country: countryMatch.country,
+            countryCode: capitalResult.countryCode,
+            isCountryCapital: true,
+          });
+        }
+      } catch {
+        // Skip if geocoding fails
+      }
+    }
+
+    // Now perform a regular geocode search for city/address matches
+    try {
+      const geocodeResults = await geocoder.geocode(trimmedQuery);
+      const formattedResults = geocodeResults.slice(0, 5).map(result => ({
+        formattedAddress: result.formattedAddress ?? '',
+        displayName: result.formattedAddress ?? '',
+        latitude: result.latitude ?? 0,
+        longitude: result.longitude ?? 0,
+        city: result.city,
+        state: result.state,
+        country: result.country,
+        countryCode: result.countryCode,
+        isCountryCapital: false,
+      }));
+      
+      // Filter out duplicates and add to results
+      for (const geocodeResult of formattedResults) {
+        const isDuplicate = results.some(
+          r => Math.abs(r.latitude - geocodeResult.latitude) < 0.01 && 
+               Math.abs(r.longitude - geocodeResult.longitude) < 0.01
+        );
+        if (!isDuplicate) {
+          results.push(geocodeResult);
+        }
+      }
+    } catch (err) {
+      // Continue with capital-only results if geocoding fails
+    }
+
+    // Return up to 8 results
+    res.json(results.slice(0, 8));
+  } catch (error) {
+    console.error('Type-ahead geocoding error:', error);
+    res.status(500).json({ message: 'Failed to search locations' });
+  }
+});
+
+// Add geocoding endpoint (must come AFTER /api/geocode/typeahead)
 app.get('/api/geocode', async (req: Request, res: Response) => {
   try {
     const { address } = req.query;
@@ -240,6 +369,94 @@ app.post('/api/locations', writeLimiter, upload.single('postcard'), (req: Reques
   } catch (error) {
     console.error('Error creating location:', error);
     res.status(500).json({ message: 'Failed to create location' });
+  }
+});
+
+app.put('/api/locations/:id', writeLimiter, upload.single('postcard'), (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      res.status(400).json({ message: 'Invalid location ID' });
+      return;
+    }
+
+    const { name, latitude, longitude, date, familyMembers } = req.body;
+
+    // Validation
+    if (!name || !latitude || !longitude || !date) {
+      res.status(400).json({ message: 'Missing required fields' });
+      return;
+    }
+
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      res.status(400).json({ message: 'Invalid coordinates' });
+      return;
+    }
+
+    let parsedFamilyMembers: string[];
+    try {
+      parsedFamilyMembers = JSON.parse(familyMembers || '[]');
+    } catch {
+      res.status(400).json({ message: 'Invalid family members format' });
+      return;
+    }
+
+    // Validate family members
+    for (const member of parsedFamilyMembers) {
+      if (!ALLOWED_FAMILY_MEMBERS.includes(member)) {
+        res.status(400).json({ message: `Invalid family member: ${member}` });
+        return;
+      }
+    }
+
+    // Get existing location to check for old postcard
+    const existingLocation = getLocationById(id);
+    if (!existingLocation) {
+      res.status(404).json({ message: 'Location not found' });
+      return;
+    }
+
+    // Handle postcard
+    let postcardUrl = existingLocation.postcard_url;
+    if (req.file) {
+      // Delete old postcard if it exists and we're uploading a new one
+      if (existingLocation.postcard_url && fs.existsSync(existingLocation.postcard_url)) {
+        fs.unlinkSync(existingLocation.postcard_url);
+      }
+      postcardUrl = req.file.path;
+    }
+
+    const updatedLocation = updateLocation(
+      id,
+      name,
+      lat,
+      lng,
+      date,
+      parsedFamilyMembers,
+      postcardUrl
+    );
+
+    if (!updatedLocation) {
+      res.status(404).json({ message: 'Location not found' });
+      return;
+    }
+
+    res.json({
+      id: updatedLocation.id,
+      name: updatedLocation.name,
+      latitude: updatedLocation.latitude,
+      longitude: updatedLocation.longitude,
+      date: updatedLocation.date,
+      familyMembers: updatedLocation.familyMembers,
+      postcardUrl: updatedLocation.postcard_url ? `/uploads/${path.basename(updatedLocation.postcard_url)}` : null,
+      createdAt: updatedLocation.created_at,
+    });
+  } catch (error) {
+    console.error('Error updating location:', error);
+    res.status(500).json({ message: 'Failed to update location' });
   }
 });
 

@@ -1,7 +1,6 @@
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Icon } from 'leaflet';
 import { Location, FAMILY_MEMBERS } from '../types';
-import { useEffect } from 'react';
 
 interface MapViewProps {
   locations: Location[];
@@ -19,19 +18,6 @@ const customIcon = new Icon({
   shadowSize: [41, 41]
 });
 
-function MapBounds({ locations }: { locations: Location[] }) {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (locations.length > 0) {
-      const bounds = locations.map(loc => [loc.latitude, loc.longitude] as [number, number]);
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
-  }, [locations, map]);
-
-  return null;
-}
-
 export default function MapView({ locations }: MapViewProps) {
   const getFamilyMemberLabels = (memberValues: string[]) => {
     return memberValues.map(value => {
@@ -42,15 +28,15 @@ export default function MapView({ locations }: MapViewProps) {
 
   return (
     <MapContainer
-      center={[40, -40]}
-      zoom={2}
+      center={[20, 0]}
+      zoom={1}
+      minZoom={1}
       style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      {locations.length > 0 && <MapBounds locations={locations} />}
       {locations.map((location) => (
         <Marker
           key={location.id}
@@ -81,3 +67,4 @@ export default function MapView({ locations }: MapViewProps) {
     </MapContainer>
   );
 }
+
