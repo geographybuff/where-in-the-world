@@ -116,7 +116,11 @@ export function createLocation(
   });
 
   const locationId = transaction();
-  return getLocationById(locationId as number)!;
+  const location = getLocationById(locationId as number);
+  if (!location) {
+    throw new Error('Failed to create location');
+  }
+  return location;
 }
 
 export function deleteLocation(id: number): boolean {

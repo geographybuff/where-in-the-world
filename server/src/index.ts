@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import multer, { FileFilterCallback } from 'multer';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -12,6 +13,22 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { message: 'Too many requests, please try again later.' }
+});
+
+// Stricter rate limit for write operations
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // limit each IP to 30 write requests per windowMs
+  message: { message: 'Too many requests, please try again later.' }
+});
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -43,7 +60,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB
+    fileSize: MAX_FILE_SIZE_BYTES,
   },
 });
 
@@ -51,6 +68,7 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
+app.use('/api', limiter);
 
 // Allowed family members
 const ALLOWED_FAMILY_MEMBERS = ['alan', 'deborah', 'john', 'cyn', 'louise', 'ben', 'michelle'];
@@ -105,7 +123,7 @@ app.get('/api/locations/:id', (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/locations', upload.single('postcard'), (req: Request, res: Response) => {
+app.post('/api/locations', writeLimiter, upload.single('postcard'), (req: Request, res: Response) => {
   try {
     const { name, latitude, longitude, date, familyMembers } = req.body;
 
@@ -182,7 +200,7 @@ app.post('/api/locations', upload.single('postcard'), (req: Request, res: Respon
   }
 });
 
-app.delete('/api/locations/:id', (req: Request, res: Response) => {
+app.delete('/api/locations/:id', writeLimiter, (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) {
@@ -219,7 +237,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Unhandled error:', err);
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      res.status(400).json({ message: 'File too large. Maximum size is 10MB.' });
+      res.status(400).json({ message: `File too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.` });
       return;
     }
     res.status(400).json({ message: err.message });
