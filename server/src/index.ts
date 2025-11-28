@@ -21,6 +21,14 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 // Initialize geocoder
 const geocoder = NodeGeocoder({
   provider: 'openstreetmap',
+  httpAdapter: 'https',
+  formatter: null,
+  // Required by OSM Nominatim usage policy
+  fetch: (url: RequestInfo) => fetch(url, {
+    headers: {
+      'User-Agent': 'WhereInTheWorld-FamilyTravelMap/1.0 (family travel tracking app)',
+    }
+  })
 });
 
 // Rate limiting
@@ -80,43 +88,9 @@ app.use('/api', limiter);
 // Allowed family members
 const ALLOWED_FAMILY_MEMBERS = ['alan', 'deborah', 'john', 'cyn', 'louise', 'ben', 'michelle'];
 
-// Add geocoding endpoint
-app.get('/api/geocode', async (req: Request, res: Response) => {
-  try {
-    const { address } = req.query;
-    
-    if (!address || typeof address !== 'string') {
-      res.status(400).json({ message: 'Address parameter is required' });
-      return;
-    }
-
-    const results = await geocoder.geocode(address);
-    
-    if (results.length === 0) {
-      res.status(404).json({ message: 'No results found for this address' });
-      return;
-    }
-
-    // Return up to 5 results with formatted data
-    const formattedResults = results.slice(0, 5).map(result => ({
-      formattedAddress: result.formattedAddress,
-      latitude: result.latitude,
-      longitude: result.longitude,
-      city: result.city,
-      state: result.state,
-      country: result.country,
-      countryCode: result.countryCode,
-    }));
-
-    res.json(formattedResults);
-  } catch (error) {
-    console.error('Geocoding error:', error);
-    res.status(500).json({ message: 'Failed to geocode address' });
-  }
-});
-
 // Type-ahead geocoding endpoint - supports city and country searches
 // If a country is entered, returns the capital as the location
+// IMPORTANT: This must come BEFORE /api/geocode since Express matches routes in order
 app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
   try {
     const { query } = req.query;
@@ -167,7 +141,7 @@ app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
             isCountryCapital: true,
           });
         }
-      } catch {
+      } catch (err) {
         // Continue with regular search if capital lookup fails
       }
     }
@@ -224,7 +198,7 @@ app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
           results.push(geocodeResult);
         }
       }
-    } catch {
+    } catch (err) {
       // Continue with capital-only results if geocoding fails
     }
 
@@ -233,6 +207,41 @@ app.get('/api/geocode/typeahead', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Type-ahead geocoding error:', error);
     res.status(500).json({ message: 'Failed to search locations' });
+  }
+});
+
+// Add geocoding endpoint (must come AFTER /api/geocode/typeahead)
+app.get('/api/geocode', async (req: Request, res: Response) => {
+  try {
+    const { address } = req.query;
+    
+    if (!address || typeof address !== 'string') {
+      res.status(400).json({ message: 'Address parameter is required' });
+      return;
+    }
+
+    const results = await geocoder.geocode(address);
+    
+    if (results.length === 0) {
+      res.status(404).json({ message: 'No results found for this address' });
+      return;
+    }
+
+    // Return up to 5 results with formatted data
+    const formattedResults = results.slice(0, 5).map(result => ({
+      formattedAddress: result.formattedAddress,
+      latitude: result.latitude,
+      longitude: result.longitude,
+      city: result.city,
+      state: result.state,
+      country: result.country,
+      countryCode: result.countryCode,
+    }));
+
+    res.json(formattedResults);
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    res.status(500).json({ message: 'Failed to geocode address' });
   }
 });
 
