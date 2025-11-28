@@ -20,8 +20,6 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 // Initialize geocoder
 const geocoder = NodeGeocoder({
   provider: 'openstreetmap',
-  httpAdapter: 'https',
-  formatter: null,
 });
 
 // Rate limiting
