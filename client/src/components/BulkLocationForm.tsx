@@ -49,6 +49,33 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const dropdownRefsRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const inputRefsRef = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      setLocations(prev => prev.map(loc => {
+        const dropdownEl = dropdownRefsRef.current[loc.id];
+        const inputEl = inputRefsRef.current[loc.id];
+        
+        if (
+          dropdownEl && 
+          !dropdownEl.contains(event.target as Node) &&
+          inputEl &&
+          !inputEl.contains(event.target as Node)
+        ) {
+          return { ...loc, showDropdown: false };
+        }
+        return loc;
+      }));
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
@@ -264,6 +291,7 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                   <div className="typeahead-input-wrapper">
                     <input
                       id={`address-${location.id}`}
+                      ref={(el) => { inputRefsRef.current[location.id] = el; }}
                       type="text"
                       value={location.address}
                       onChange={(e) => handleAddressChange(location.id, e.target.value)}
@@ -271,12 +299,6 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                         if (location.typeaheadResults.length > 0) {
                           updateLocation(location.id, { showDropdown: true });
                         }
-                      }}
-                      onBlur={() => {
-                        // Delay hiding to allow click on dropdown items
-                        setTimeout(() => {
-                          updateLocation(location.id, { showDropdown: false });
-                        }, 200);
                       }}
                       placeholder="Type a city or country name..."
                       className="typeahead-input"
@@ -288,7 +310,10 @@ export default function BulkLocationForm({ onLocationsAdded }: BulkLocationFormP
                   </div>
                   
                   {location.showDropdown && location.typeaheadResults.length > 0 && (
-                    <div className="typeahead-dropdown">
+                    <div 
+                      className="typeahead-dropdown"
+                      ref={(el) => { dropdownRefsRef.current[location.id] = el; }}
+                    >
                       {location.typeaheadResults.map((result, resultIndex) => (
                         <button
                           key={resultIndex}
