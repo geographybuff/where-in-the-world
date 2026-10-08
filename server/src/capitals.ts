@@ -67,7 +67,7 @@ export const COUNTRY_CAPITALS: Record<string, CapitalInfo> = {
   'ecuador': { capital: 'Quito', country: 'Ecuador' },
   'egypt': { capital: 'Cairo', country: 'Egypt' },
   'el salvador': { capital: 'San Salvador', country: 'El Salvador' },
-  'equatorial guinea': { capital: 'Malabo', country: 'Equatorial Guinea' },
+  'equatorial guinea': { capital: 'Ciudad de la Paz', country: 'Equatorial Guinea' },
   'eritrea': { capital: 'Asmara', country: 'Eritrea' },
   'estonia': { capital: 'Tallinn', country: 'Estonia' },
   'eswatini': { capital: 'Mbabane', country: 'Eswatini' },
